@@ -1,35 +1,70 @@
 from flask import Flask, request, jsonify
-import gspread
-from oauth2client.service_account import ServiceAccountCredentials
 import os
+import json
 
 app = Flask(__name__)
 
 # Google Sheets configuration
 GOOGLE_SHEET = os.environ.get('GOOGLE_SHEET_NAME', 'YOUR_SHEET_NAME')
-CREDENTIALS_FILE = 'credentials.json'
-
-scope = ['https://spreadsheets.google.com/feeds','https://www.googleapis.com/auth/drive']
-creds = ServiceAccountCredentials.from_json_keyfile_name(CREDENTIALS_FILE, scope)
-gc = gspread.authorize(creds)
-sh = gc.open(GOOGLE_SHEET)
-worksheet = sh.sheet1
+CREDENTIALS_JSON = os.environ.get('GOOGLE_CREDENTIALS_JSON', None)
 
 @app.route('/jira-to-gsheet', methods=['POST'])
 def jira_to_gsheet():
-    data = request.json
-    jira_id = data.get('issue', {}).get('key')
-    fields = data.get('issue', {}).get('fields', {})
-    feature_impact = fields.get('customfield_XXXXX', '')  # Replace with your custom field ID
-    summary = fields.get('summary', '')
-    releasedate = fields.get('releasedate', '')
-    
-    worksheet.append_row([jira_id, summary, feature_impact, releasedate])
-    return jsonify({"status": "success"}), 200
+    try:
+        data = request.json
+        jira_id = data.get('issue', {}).get('key')
+        fields = data.get('issue', {}).get('fields', {})
+        feature_impact = fields.get('customfield_XXXXX', '')  # Replace with your custom field ID
+        summary = fields.get('summary', '')
+        releasedate = fields.get('releasedate', '')
+        
+        # Log received data
+        print(f"Received Jira webhook: ID={jira_id}, Summary={summary}")
+        
+        # Check if credentials are configured
+        if not CREDENTIALS_JSON:
+            return jsonify({
+                "status": "warning",
+                "message": "Google Sheets credentials not configured. Set GOOGLE_CREDENTIALS_JSON environment variable.",
+                "received_data": {
+                    "jira_id": jira_id,
+                    "summary": summary,
+                    "feature_impact": feature_impact,
+                    "releasedate": releasedate
+                }
+            }), 200
+        
+        # If credentials are available, write to Google Sheets
+        try:
+            import gspread
+            from oauth2client.service_account import ServiceAccountCredentials
+            
+            scope = ['https://spreadsheets.google.com/feeds','https://www.googleapis.com/auth/drive']
+            creds_dict = json.loads(CREDENTIALS_JSON)
+            creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+            gc = gspread.authorize(creds)
+            sh = gc.open(GOOGLE_SHEET)
+            worksheet = sh.sheet1
+            worksheet.append_row([jira_id, summary, feature_impact, releasedate])
+            
+            return jsonify({"status": "success", "message": "Data written to Google Sheets"}), 200
+        except Exception as e:
+            return jsonify({
+                "status": "error",
+                "message": f"Failed to write to Google Sheets: {str(e)}",
+                "received_data": {
+                    "jira_id": jira_id,
+                    "summary": summary
+                }
+            }), 500
+            
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.route('/', methods=['GET'])
 def health():
-    return jsonify({"status": "running"}), 200
+    return jsonify({"status": "running", "message": "Jira webhook service is active"}), 200
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port)
