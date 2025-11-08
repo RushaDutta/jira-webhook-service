@@ -7,9 +7,7 @@ from datetime import datetime
 import logging
 import sys
 import traceback
-from dotenv import load_dotenv
 
-load_dotenv()
 
 # Logging configuration: logs to both console and a timestamped file
 logging.basicConfig(
