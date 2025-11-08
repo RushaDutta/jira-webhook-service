@@ -167,9 +167,6 @@ Task: Assess whether the actual feature impact significantly deviated from the i
         logger.error(traceback.format_exc())
         return error
 
-# Other functions stay unchanged (generate_summary_for_next_cycle, write_evaluation_to_sheet, etc.)
-# Use the same LLM prompt structure for generate_summary_for_next_cycle if you summarize across all features.
-
 def write_evaluation_to_sheet(row_index, evaluation_text):
     logger.info(f"Writing evaluation to row {row_index}...")
     client = get_google_sheets_client()
