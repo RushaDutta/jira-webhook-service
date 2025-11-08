@@ -7,7 +7,9 @@ from datetime import datetime
 import logging
 import sys
 import traceback
+from dotenv import load_dotenv
 
+load_dotenv()
 
 # Logging configuration: logs to both console and a timestamped file
 logging.basicConfig(
@@ -20,14 +22,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Config loaded from environment (or fallback/defaults)
+# Config loaded from environment
 GOOGLE_SHEET = os.environ.get('GOOGLE_SHEET_NAME', 'YOUR_SHEET_NAME')
 CREDENTIALS_JSON = os.environ.get('GOOGLE_CREDENTIALS_JSON') or os.environ.get('GOOGLE_CREDS_JSON')
 OPENROUTER_API_KEY = os.environ.get('OPENROUTER_API_KEY')
 OPENROUTER_MODEL = os.environ.get('OPENROUTER_MODEL', 'openai/gpt-4o')
 YOUR_SITE_URL = os.environ.get('SITE_URL', 'https://yourapp.com')
 YOUR_SITE_NAME = os.environ.get('SITE_NAME', 'Jira Feedback Processor')
-
 
 logger.info("=" * 80)
 logger.info("LLM FEEDBACK EVALUATION SERVICE STARTED")
@@ -60,7 +61,6 @@ def get_google_sheets_client():
             'https://www.googleapis.com/auth/drive'
         ]
         creds = Credentials.from_service_account_info(creds_dict, scopes=requested_scopes)
-        logger.info("[DEBUG] Credentials object created")
         client = gspread.authorize(creds)
         logger.info("✓ Successfully authorized Google Sheets client")
         return client
@@ -77,39 +77,35 @@ def read_feedback_rows():
     if not client:
         return []
     try:
-        logger.info(f"Opening Google Sheet: '{GOOGLE_SHEET}'...")
         sh = client.open(GOOGLE_SHEET)
         worksheet = sh.get_worksheet(0)
-        logger.info(f"✓ Successfully opened sheet: '{sh.title}', worksheet: '{worksheet.title}'")
         all_rows = worksheet.get_all_values()
         logger.info(f"✓ Retrieved {len(all_rows)} total rows")
         if len(all_rows) < 2:
             logger.warning("No data rows found in sheet")
             return []
-        headers = all_rows[0]
-        # This assumes: ['JiraSummary', 'STAR Priority', 'Priority Rationale', 'Feature Impact', 'ReleaseDate', 'Reflexive Summary']
         data_rows = all_rows[1:]
-
         rows_to_process = []
         for idx, row in enumerate(data_rows, start=2):
-            while len(row) < 6:  # Ensure there are at least 6 columns
+            while len(row) < 9:  # Ensure all columns present
                 row.append('')
-            summary = row[0].strip() if row[0] else ''
-            priority = row[1].strip() if row[1] else ''
-            justification = row[2].strip() if row[2] else ''
-            feature_impact = row[3].strip() if row[3] else ''
-            releasedate = row[4].strip() if row[4] else ''
-            # Reflexive Summary is at row[5] (destination for output)
-            if feature_impact:
+            jira_id = row[0].strip() if row[0] else ''
+            summary = row[1].strip() if row[1] else ''
+            priority = row[2].strip() if row[2] else ''
+            justification = row[3].strip() if row[3] else ''
+            feature_impact = row[4].strip() if row[4] else ''
+            releasedate = row[5].strip() if row[5] else ''
+            # OUTPUT columns: row[6] = Reflexive Summary, row[7] = wasProcessed, row[8] = Timestamp
+            if jira_id and feature_impact:
                 rows_to_process.append({
                     'row_index': idx,
+                    'jira_id': jira_id,
                     'summary': summary,
                     'priority': priority,
                     'justification': justification,
                     'feature_impact': feature_impact,
                     'releasedate': releasedate
                 })
-
         logger.info(f"\nFound {len(rows_to_process)} rows to process")
         logger.info("=" * 80)
         return rows_to_process
@@ -119,20 +115,23 @@ def read_feedback_rows():
         return []
 
 def evaluate_individual_feedback(row_data):
-    jira_id = row_data['jira_id']
     logger.info(f"\n{'─' * 80}")
-    logger.info(f"EVALUATING: {jira_id}")
+    logger.info(f"EVALUATING: {row_data['jira_id']}")
     logger.info(f"{'─' * 80}")
     if not OPENROUTER_API_KEY:
         return "Error: OPENROUTER_API_KEY not configured"
     try:
         prompt = f"""Reflexive evaluation of Jira feature prioritization.
 
-Feature: {row_data['jira_id']} - {row_data['summary']}
-Assigned Priority: {row_data['priority']}
-Justification: {row_data['justification']}
-Actual Feature Impact: {row_data['feature_impact']}
-Task: Assess whether the actual feature impact significantly deviated from the initial priority assignment and justification. Highlight key deviations and provide learnings for future prioritization. (1 line each)"""
+Jira ID: {row_data['jira_id']}
+Jira Summary: {row_data['summary']}
+STAR Priority: {row_data['priority']}
+Priority Rationale: {row_data['justification']}
+Feature Impact: {row_data['feature_impact']}
+Release Date: {row_data['releasedate']}
+
+Task: Assess whether the actual Feature Impact significantly deviated from the initial STAR Priority and Priority Rationale. Reference Release Date if relevant.
+Summarize findings for the Reflexive Summary. Provide learnings for future prioritization (one line each)."""
         logger.info(f"Calling OpenRouter API...")
         start_time = datetime.now()
         response = requests.post(
@@ -177,9 +176,9 @@ def write_evaluation_to_sheet(row_index, evaluation_text):
         sh = client.open(GOOGLE_SHEET)
         worksheet = sh.get_worksheet(0)
         timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        worksheet.update_cell(row_index, 7, evaluation_text)   # Write into column G
-        worksheet.update_cell(row_index, 8, 'Processed')       # Column H
-        worksheet.update_cell(row_index, 9, timestamp)         # Column I
+        worksheet.update_cell(row_index, 7, evaluation_text)   # Reflexive Summary (col G/7)
+        worksheet.update_cell(row_index, 8, 'Processed')       # wasProcessed (col H/8)
+        worksheet.update_cell(row_index, 9, timestamp)         # Timestamp (col I/9)
         logger.info(f"✓ Written to row {row_index} at {timestamp}")
         return True
     except Exception as e:
@@ -194,14 +193,17 @@ def generate_html_report(evaluations, output_path):
         html.append("<html><head><meta charset='UTF-8'><title>LLM Reflexive Evaluation Report</title></head><body>")
         html.append("<h1>LLM Reflexive Prioritization Evaluation Report</h1><table border='1' cellpadding='6' cellspacing='0'>")
         html.append(
-            "<tr style='background:#cacaca'><th>Jira ID</th><th>Summary</th><th>Priority</th><th>Evaluation</th></tr>"
+            "<tr style='background:#cacaca'><th>Jira ID</th><th>Jira Summary</th><th>STAR Priority</th><th>Priority Rationale</th><th>Feature Impact</th><th>Release Date</th><th>Reflexive Summary</th></tr>"
         )
         for entry in evaluations:
-            eval_html = entry.get('evaluation', '').replace('\n', '<br>')
+            eval_html = entry.get('reflexive_summary', '').replace('\n', '<br>')
             html.append(
                 f"<tr><td>{entry.get('jira_id','')}</td>"
                 f"<td>{entry.get('summary','')}</td>"
                 f"<td>{entry.get('priority','')}</td>"
+                f"<td>{entry.get('justification','')}</td>"
+                f"<td>{entry.get('feature_impact','')}</td>"
+                f"<td>{entry.get('releasedate','')}</td>"
                 f"<td>{eval_html}</td></tr>"
             )
         html.append("</table></body></html>")
@@ -239,7 +241,10 @@ def process_all_feedback():
                     'jira_id': row_data['jira_id'],
                     'summary': row_data['summary'],
                     'priority': row_data['priority'],
-                    'evaluation': evaluation
+                    'justification': row_data['justification'],
+                    'feature_impact': row_data['feature_impact'],
+                    'releasedate': row_data['releasedate'],
+                    'reflexive_summary': evaluation
                 })
             else:
                 failed_count += 1
@@ -259,8 +264,7 @@ def process_all_feedback():
         logger.info(f"Duration: {duration:.2f} seconds")
         logger.info(f"Total rows processed: {processed_count}")
         logger.info("=" * 80)
-        # ------------- HTML REPORT --------------
-        # Ensure docs directory exists (for GitHub Pages)
+        # HTML report generation
         docs_dir = "docs"
         os.makedirs(docs_dir, exist_ok=True)
         html_report_path = os.path.join(
@@ -268,10 +272,9 @@ def process_all_feedback():
             f"llm_evaluation_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
         )
         generate_html_report(all_evaluations, html_report_path)
-        # Optional: always update latest report for stable URL
         import shutil
         shutil.copyfile(html_report_path, os.path.join(docs_dir, "latest_report.html"))
-        logger.info(f"HTML report(s) generated! Publish (or commit/push) to GitHub Pages or static host.")
+        logger.info(f"HTML report(s) generated! Publish (commit/push) to GitHub Pages or static host.")
     except Exception as e:
         logger.error(f"Fatal error in process_all_feedback: {e}")
         logger.error(f"Traceback: {traceback.format_exc()}")
