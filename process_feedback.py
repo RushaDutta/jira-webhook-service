@@ -8,8 +8,6 @@ import logging
 import sys
 import traceback
 
-##from dotenv import load_dotenv
-##load_dotenv()
 
 # Logging configuration: logs to both console and a timestamped file
 logging.basicConfig(
@@ -91,27 +89,27 @@ def read_feedback_rows():
         headers = all_rows[0]
         # This assumes: ['JiraSummary', 'STAR Priority', 'Priority Rationale', 'Feature Impact', 'ReleaseDate', 'Reflexive Summary']
         data_rows = all_rows[1:]
+
         rows_to_process = []
         for idx, row in enumerate(data_rows, start=2):
             while len(row) < 6:  # Ensure there are at least 6 columns
                 row.append('')
-            jiraid = row[0].strip() if row[0] else ''
-            summary = row[1].strip() if row[0] else ''
-            priority = row[2].strip() if row[1] else ''
-            justification = row[3].strip() if row[2] else ''
-            feature_impact = row[4].strip() if row[3] else ''
-            releasedate = row[5].strip() if row[4] else ''
+            summary = row[0].strip() if row[0] else ''
+            priority = row[1].strip() if row[1] else ''
+            justification = row[2].strip() if row[2] else ''
+            feature_impact = row[3].strip() if row[3] else ''
+            releasedate = row[4].strip() if row[4] else ''
             # Reflexive Summary is at row[5] (destination for output)
             if feature_impact:
                 rows_to_process.append({
                     'row_index': idx,
-                    'jira-id' : jiraid,
                     'summary': summary,
                     'priority': priority,
                     'justification': justification,
                     'feature_impact': feature_impact,
                     'releasedate': releasedate
                 })
+
         logger.info(f"\nFound {len(rows_to_process)} rows to process")
         logger.info("=" * 80)
         return rows_to_process
@@ -270,7 +268,7 @@ def process_all_feedback():
             f"llm_evaluation_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
         )
         generate_html_report(all_evaluations, html_report_path)
-        # always update latest report for stable URL
+        # Optional: always update latest report for stable URL
         import shutil
         shutil.copyfile(html_report_path, os.path.join(docs_dir, "latest_report.html"))
         logger.info(f"HTML report(s) generated! Publish (or commit/push) to GitHub Pages or static host.")
