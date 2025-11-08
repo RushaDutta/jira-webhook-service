@@ -8,8 +8,8 @@ import logging
 import sys
 import traceback
 
-from dotenv import load_dotenv
-load_dotenv()
+##from dotenv import load_dotenv
+##load_dotenv()
 
 # Logging configuration: logs to both console and a timestamped file
 logging.basicConfig(
@@ -270,7 +270,7 @@ def process_all_feedback():
             f"llm_evaluation_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
         )
         generate_html_report(all_evaluations, html_report_path)
-        # Optional: always update latest report for stable URL
+        # always update latest report for stable URL
         import shutil
         shutil.copyfile(html_report_path, os.path.join(docs_dir, "latest_report.html"))
         logger.info(f"HTML report(s) generated! Publish (or commit/push) to GitHub Pages or static host.")
