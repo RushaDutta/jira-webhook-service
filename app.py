@@ -56,6 +56,7 @@ def jira_to_gsheet():
             print(f"✓ Authorized with Google Sheets API")
             sh = gc.open(GOOGLE_SHEET)
             print(f"✓ Opened sheet: {GOOGLE_SHEET}")
+                    print(f"  Spreadsheet URL: https://docs.google.com/spreadsheets/d/{sh.id}")
             worksheet = sh.sheet1
             worksheet.append_row([jira_id, summary, priority, justification, feature_impact, releasedate])            
             print(f"✓ Successfully wrote row: {[jira_id, summary, priority, justification, feature_impact, releasedate]}")
