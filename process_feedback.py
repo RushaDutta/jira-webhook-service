@@ -126,10 +126,10 @@ Jira Summary: {row_data['summary']}
 STAR Priority: {row_data['priority']}
 Priority Rationale: {row_data['justification']}
 Feature Impact: {row_data['feature_impact']}
-Release Date: {row_data['releasedate']}
-
-Task: Assess whether the actual Feature Impact significantly deviated from the initial STAR Priority and Priority Rationale. Reference Release Date if relevant.
-Summarize findings for the Reflexive Summary. Provide learnings for future prioritization (one line each)."""
+Task: 
+- Write a single reflexive summary sentence (max 40 words) describing any significant deviation between STAR Priority/Rationale and actual Feature Impact.
+- Then, give up to 2 key learnings (each <20 words), useful for improving future prioritization.
+- Do not elaborate further. Do not repeat inputs."""
         logger.info(f"Calling OpenRouter API...")
         start_time = datetime.now()
         response = requests.post(
