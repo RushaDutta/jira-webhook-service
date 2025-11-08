@@ -8,6 +8,7 @@ import logging
 import sys
 import traceback
 
+print("[DEBUG] process_feedback.py started")
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -36,6 +37,16 @@ logger.info(f"  - OpenRouter API Key: {'✓ Configured' if OPENROUTER_API_KEY el
 logger.info(f"  - Google Credentials: {'✓ Configured' if CREDENTIALS_JSON else '✗ Missing'}")
 logger.info("=" * 80)
 
+# At the very top: parse creds and log client_email for debug
+try:
+    if CREDENTIALS_JSON:
+        creds_dict_debug = json.loads(CREDENTIALS_JSON)
+        logger.info(f"[DEBUG] Parsed GOOGLE_CREDENTIALS_JSON, client_email: {creds_dict_debug.get('client_email', 'N/A')}")
+    else:
+        logger.error("[DEBUG] GOOGLE_CREDENTIALS_JSON not available for debug")
+except Exception as e:
+    logger.error(f"[DEBUG] Failed to parse GOOGLE_CREDENTIALS_JSON: {e}")
+
 def get_google_sheets_client():
     logger.info("Attempting to authorize Google Sheets client...")
     if not CREDENTIALS_JSON:
@@ -44,12 +55,25 @@ def get_google_sheets_client():
     try:
         creds_dict = json.loads(CREDENTIALS_JSON)
         logger.debug(f"Service account email: {creds_dict.get('client_email', 'N/A')}")
-        creds = Credentials.from_service_account_info(creds_dict, scopes=['https://www.googleapis.com/auth/spreadsheets'])
+        # Explicitly request both Sheets and Drive scopes for best compatibility
+        requested_scopes = [
+            'https://www.googleapis.com/auth/spreadsheets',
+            'https://www.googleapis.com/auth/drive'
+        ]
+        logger.info(f"[DEBUG] Requested OAuth scopes: {requested_scopes}")
+        creds = Credentials.from_service_account_info(creds_dict, scopes=requested_scopes)
+        logger.info("[DEBUG] Credentials object created")
+        if hasattr(creds, "scopes"):
+            logger.info(f"[DEBUG] Credential scopes attached: {creds.scopes}")
+        # Optionally, debug: print token attributes if available
+        if hasattr(creds, "token"):
+            logger.info(f"[DEBUG] Credential token: {getattr(creds, 'token', None)}")
         client = gspread.authorize(creds)
         logger.info("✓ Successfully authorized Google Sheets client")
         return client
     except Exception as e:
         logger.error(f"Error authorizing Google Sheets: {e}")
+        logger.error(traceback.format_exc())
         return None
 
 def read_feedback_rows():
@@ -92,6 +116,7 @@ def read_feedback_rows():
         return rows_to_process
     except Exception as e:
         logger.error(f"Error reading feedback rows: {e}")
+        logger.error(traceback.format_exc())
         return []
 
 def evaluate_individual_feedback(row_data):
@@ -138,6 +163,7 @@ Task: Compare the priority/justification with actual feedback. Was the priority 
     except Exception as e:
         error = f"Error: {str(e)}"
         logger.error(error)
+        logger.error(traceback.format_exc())
         return error
 
 def generate_summary_for_next_cycle(all_evaluations):
@@ -179,6 +205,7 @@ Provide a structured summary (300-400 words) to improve next round of LLM priori
             return f"API Error: {response.status_code}"
     except Exception as e:
         logger.error(f"Error generating summary: {e}")
+        logger.error(traceback.format_exc())
         return f"Error: {str(e)}"
 
 def write_evaluation_to_sheet(row_index, evaluation_text):
@@ -197,6 +224,7 @@ def write_evaluation_to_sheet(row_index, evaluation_text):
         return True
     except Exception as e:
         logger.error(f"Error writing to sheet: {e}")
+        logger.error(traceback.format_exc())
         return False
 
 def write_summary_to_sheet(summary_text):
@@ -220,6 +248,7 @@ def write_summary_to_sheet(summary_text):
         return True
     except Exception as e:
         logger.error(f"Error writing summary: {e}")
+        logger.error(traceback.format_exc())
         return False
 
 def process_all_feedback():
