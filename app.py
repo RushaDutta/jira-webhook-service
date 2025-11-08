@@ -22,10 +22,11 @@ def jira_to_gsheet():
         # Safely extract data with defaults
         jira_id = data.get('issue', {}).get('key', 'UNKNOWN')
         fields = data.get('issue', {}).get('fields', {})
-        feature_impact = fields.get('customfield_XXXXX', '')
         summary = fields.get('summary', '')
-        releasedate = fields.get('releasedate', '')
-        
+        priority = fields.get('priority', '')
+        justification = fields.get('justification', '')
+        feature_impact = fields.get('featureImpact', '')
+        releasedate = fields.get('releasedate', '')        
         # Log received data
         print(f"Received Jira webhook: ID={jira_id}, Summary={summary}")
         
@@ -37,9 +38,10 @@ def jira_to_gsheet():
                 "received_data": {
                     "jira_id": jira_id,
                     "summary": summary,
+                    "priority": priority,
+                    "justification": justification,
                     "feature_impact": feature_impact,
-                    "releasedate": releasedate
-                }
+                    "releasedate": releasedate                }
             }), 200
         
         # If credentials are available, write to Google Sheets
@@ -53,17 +55,20 @@ def jira_to_gsheet():
             gc = gspread.authorize(creds)
             sh = gc.open(GOOGLE_SHEET)
             worksheet = sh.sheet1
-            worksheet.append_row([jira_id, summary, feature_impact, releasedate])
-            
+            worksheet.append_row([jira_id, summary, priority, justification, feature_impact, releasedate])            
             return jsonify({"status": "success", "message": "Data written to Google Sheets"}), 200
         except Exception as e:
             print(f"Error writing to Google Sheets: {str(e)}")
             return jsonify({
                 "status": "error",
                 "message": f"Failed to write to Google Sheets: {str(e)}",
-                "received_data": {
+                                "received_data": {
                     "jira_id": jira_id,
-                    "summary": summary
+                    "summary": summary,
+                    "priority": priority,
+                    "justification": justification,
+                    "feature_impact": feature_impact,
+                    "releasedate": releasedate
                 }
             }), 500
             
