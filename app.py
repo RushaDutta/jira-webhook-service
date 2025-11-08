@@ -53,13 +53,15 @@ def jira_to_gsheet():
             creds_dict = json.loads(CREDENTIALS_JSON)
             creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
             gc = gspread.authorize(creds)
+                    print(f"✓ Authorized with Google Sheets API")
             sh = gc.open(GOOGLE_SHEET)
+                    print(f"✓ Opened sheet: {GOOGLE_SHEET}")
             worksheet = sh.sheet1
             worksheet.append_row([jira_id, summary, priority, justification, feature_impact, releasedate])            
+                    print(f"✓ Successfully wrote row: {[jira_id, summary, priority, justification, feature_impact, releasedate]}")
             return jsonify({"status": "success", "message": "Data written to Google Sheets"}), 200
         except Exception as e:
-            print(f"Error writing to Google Sheets: {str(e)}")
-            return jsonify({
+        print(f"✗ Error writing to Google Sheets: {type(e).__name__}: {str(e)}")            return jsonify({
                 "status": "error",
                 "message": f"Failed to write to Google Sheets: {str(e)}",
                                 "received_data": {
