@@ -1,18 +1,19 @@
 import os
 import gspread
 from google.oauth2.service_account import Credentials
-import google.generativeai as genai
-from datetime import datetime
+import requests
 import json
+from datetime import datetime
 
 # Google Sheets configuration
 GOOGLE_SHEET = os.environ.get('GOOGLE_SHEET_NAME', 'YOUR_SHEET_NAME')
 CREDENTIALS_JSON = os.environ.get('GOOGLE_CREDENTIALS_JSON', None)
 
-# Configure Gemini API
-GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
+# Configure OpenRouter API
+OPENROUTER_API_KEY = os.environ.get('OPENROUTER_API_KEY')
+OPENROUTER_MODEL = os.environ.get('OPENROUTER_MODEL', 'openai/gpt-4o')  # Default model
+YOUR_SITE_URL = os.environ.get('SITE_URL', 'https://yourapp.com')  # Optional
+YOUR_SITE_NAME = os.environ.get('SITE_NAME', 'Jira Feedback Processor')  # Optional
 
 def get_google_sheets_client():
     """Authorize and return Google Sheets client"""
@@ -84,15 +85,15 @@ def read_feedback_rows():
         
         print(f"Found {len(rows_to_process)} rows to process")
         return rows_to_process
-        
+    
     except Exception as e:
         print(f"Error reading feedback rows: {e}")
         return []
 
 def evaluate_with_llm(row_data):
-    """Send data to LLM for evaluation"""
-    if not GEMINI_API_KEY:
-        return "Error: GEMINI_API_KEY not configured"
+    """Send data to LLM for evaluation using OpenRouter"""
+    if not OPENROUTER_API_KEY:
+        return "Error: OPENROUTER_API_KEY not configured"
     
     try:
         # Construct the prompt
@@ -113,12 +114,34 @@ Task: Go through these fields and summarize any deviations in the feedback compa
 
 Provide a concise summary (2-3 sentences) of key deviations or insights."""
         
-        # Use Gemini API
-        model = genai.GenerativeModel('gemini-pro')
-        response = model.generate_content(prompt)
+        # Call OpenRouter API
+        response = requests.post(
+            url="https://openrouter.ai/api/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                "HTTP-Referer": YOUR_SITE_URL,
+                "X-Title": YOUR_SITE_NAME,
+                "Content-Type": "application/json"
+            },
+            data=json.dumps({
+                "model": OPENROUTER_MODEL,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ]
+            })
+        )
         
-        return response.text
-        
+        if response.status_code == 200:
+            result = response.json()
+            return result['choices'][0]['message']['content']
+        else:
+            error_msg = f"OpenRouter API Error: {response.status_code} - {response.text}"
+            print(error_msg)
+            return error_msg
+    
     except Exception as e:
         print(f"Error calling LLM API: {e}")
         return f"Error: {str(e)}"
@@ -142,7 +165,7 @@ def write_evaluation_to_sheet(row_index, evaluation_text):
         
         print(f"  Written evaluation to row {row_index}")
         return True
-        
+    
     except Exception as e:
         print(f"Error writing evaluation: {e}")
         return False
