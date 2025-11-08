@@ -179,3 +179,61 @@ def write_evaluation_to_sheet(row_index, evaluation_text):
         sh = client.open(GOOGLE_SHEET)
         worksheet = sh.get_worksheet(0)
         timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        worksheet.update_cell(row_index, 7, evaluation_text)   # Write into column G
+        worksheet.update_cell(row_index, 8, 'Processed')       # Column H
+        worksheet.update_cell(row_index, 9, timestamp)         # Column I
+        logger.info(f"✓ Written to row {row_index} at {timestamp}")
+        return True
+    except Exception as e:
+        logger.error(f"Error writing to sheet: {e}")
+        logger.error(traceback.format_exc())
+        return False
+
+def process_all_feedback():
+    execution_start = datetime.now()
+    logger.info("\n" + "=" * 80)
+    logger.info("STARTING FEEDBACK PROCESSING")
+    logger.info("=" * 80)
+    logger.info(f"Started at: {execution_start.strftime('%Y-%m-%d %H:%M:%S')}")
+    logger.info("=" * 80)
+    try:
+        rows_to_process = read_feedback_rows()
+        if not rows_to_process:
+            logger.warning("\n⚠ No rows to process. Exiting.")
+            return
+        logger.info("\n" + "=" * 80)
+        logger.info("PROCESSING INDIVIDUAL FEEDBACK")
+        logger.info("=" * 80)
+        processed_count = 0
+        failed_count = 0
+        all_evaluations = []
+        for idx, row_data in enumerate(rows_to_process, start=1):
+            logger.info(f"\n[{idx}/{len(rows_to_process)}] Processing {row_data['jira_id']}...")
+            evaluation = evaluate_individual_feedback(row_data)
+            if write_evaluation_to_sheet(row_data['row_index'], evaluation):
+                processed_count += 1
+                all_evaluations.append({'jira_id': row_data['jira_id'], 'summary': row_data['summary'], 'priority': row_data['priority'], 'evaluation': evaluation})
+            else:
+                failed_count += 1
+        logger.info("\n" + "=" * 80)
+        logger.info("INDIVIDUAL PROCESSING COMPLETE")
+        logger.info("=" * 80)
+        logger.info(f"Processed: {processed_count}/{len(rows_to_process)}")
+        logger.info(f"Failed: {failed_count}")
+        logger.info("=" * 80)
+        execution_end = datetime.now()
+        duration = (execution_end - execution_start).total_seconds()
+        logger.info("\n" + "=" * 80)
+        logger.info("EXECUTION COMPLETE")
+        logger.info("=" * 80)
+        logger.info(f"Started: {execution_start.strftime('%Y-%m-%d %H:%M:%S')}")
+        logger.info(f"Ended: {execution_end.strftime('%Y-%m-%d %H:%M:%S')}")
+        logger.info(f"Duration: {duration:.2f} seconds")
+        logger.info(f"Total rows processed: {processed_count}")
+        logger.info("=" * 80)
+    except Exception as e:
+        logger.error(f"Fatal error in process_all_feedback: {e}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
+
+if __name__ == "__main__":
+    process_all_feedback()
