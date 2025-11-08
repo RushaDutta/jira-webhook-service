@@ -137,8 +137,7 @@ Feature: {row_data['jira_id']} - {row_data['summary']}
 Assigned Priority: {row_data['priority']}
 Justification: {row_data['justification']}
 Actual Feature Impact: {row_data['feature_impact']}
-
-Task: Assess whether the actual feature impact significantly deviated from the initial priority assignment and justification. Highlight key deviations and provide learnings for future prioritization. (2-3 sentences)"""
+Task: Assess whether the actual feature impact significantly deviated from the initial priority assignment and justification. Highlight key deviations and provide learnings for future prioritization. (1 line each)"""
         logger.info(f"Calling OpenRouter API...")
         start_time = datetime.now()
         response = requests.post(
