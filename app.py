@@ -1,20 +1,28 @@
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 import os
 import json
 
 app = Flask(__name__)
+CORS(app)  # Enable CORS for all routes
 
 # Google Sheets configuration
 GOOGLE_SHEET = os.environ.get('GOOGLE_SHEET_NAME', 'YOUR_SHEET_NAME')
 CREDENTIALS_JSON = os.environ.get('GOOGLE_CREDENTIALS_JSON', None)
 
-@app.route('/jira-to-gsheet', methods=['POST'])
+@app.route('/jira-to-gsheet', methods=['POST', 'OPTIONS'])
 def jira_to_gsheet():
+    # Handle CORS preflight
+    if request.method == 'OPTIONS':
+        return '', 200
+    
     try:
         data = request.json
-        jira_id = data.get('issue', {}).get('key')
+        
+        # Safely extract data with defaults
+        jira_id = data.get('issue', {}).get('key', 'UNKNOWN')
         fields = data.get('issue', {}).get('fields', {})
-        feature_impact = fields.get('customfield_XXXXX', '')  # Replace with your custom field ID
+        feature_impact = fields.get('customfield_XXXXX', '')
         summary = fields.get('summary', '')
         releasedate = fields.get('releasedate', '')
         
@@ -49,6 +57,7 @@ def jira_to_gsheet():
             
             return jsonify({"status": "success", "message": "Data written to Google Sheets"}), 200
         except Exception as e:
+            print(f"Error writing to Google Sheets: {str(e)}")
             return jsonify({
                 "status": "error",
                 "message": f"Failed to write to Google Sheets: {str(e)}",
@@ -59,6 +68,7 @@ def jira_to_gsheet():
             }), 500
             
     except Exception as e:
+        print(f"Error processing request: {str(e)}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.route('/', methods=['GET'])
