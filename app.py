@@ -61,7 +61,8 @@ def jira_to_gsheet():
             print(f"✓ Successfully wrote row: {[jira_id, summary, priority, justification, feature_impact, releasedate]}")
             return jsonify({"status": "success", "message": "Data written to Google Sheets"}), 200
         except Exception as e:
-            print(f"✗ Error writing to Google Sheets: {type(e).__name__}: {str(e)}")            return jsonify({
+            print(f"✗ Error writing to Google Sheets: {type(e).__name__}: {str(e)}")            
+            return jsonify({
                     "status": "error",
                     "message": f"Failed to write to Google Sheets: {str(e)}",
                                     "received_data": {
@@ -148,7 +149,8 @@ def jira_to_gsheet():
             print(f"✓ Successfully wrote row: {[jira_id, summary, priority, justification, feature_impact, releasedate]}")
             return jsonify({"status": "success", "message": "Data written to Google Sheets"}), 200
         except Exception as e:
-            print(f"✗ Error writing to Google Sheets: {type(e).__name__}: {str(e)}")            return jsonify({
+            print(f"✗ Error writing to Google Sheets: {type(e).__name__}: {str(e)}")            
+            return jsonify({
                     "status": "error",
                     "message": f"Failed to write to Google Sheets: {str(e)}",
                                     "received_data": {
