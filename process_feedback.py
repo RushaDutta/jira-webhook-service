@@ -4,59 +4,119 @@ from google.oauth2.service_account import Credentials
 import requests
 import json
 from datetime import datetime
+import logging
+import sys
+import traceback
 
-# Google Sheets configuration
+# ============================================================================
+# LOGGING CONFIGURATION
+# ============================================================================
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout),
+        logging.FileHandler(f'llm_evaluation_{datetime.now().strftime("%Y%m%d_%H%M%S")}.log')
+    ]
+)
+
+logger = logging.getLogger(__name__)
+
+# ============================================================================
+# CONFIGURATION
+# ============================================================================
+
 GOOGLE_SHEET = os.environ.get('GOOGLE_SHEET_NAME', 'YOUR_SHEET_NAME')
 CREDENTIALS_JSON = os.environ.get('GOOGLE_CREDENTIALS_JSON', None)
 
-# Configure OpenRouter API
 OPENROUTER_API_KEY = os.environ.get('OPENROUTER_API_KEY')
-OPENROUTER_MODEL = os.environ.get('OPENROUTER_MODEL', 'openai/gpt-4o')  # Default model
-YOUR_SITE_URL = os.environ.get('SITE_URL', 'https://yourapp.com')  # Optional
-YOUR_SITE_NAME = os.environ.get('SITE_NAME', 'Jira Feedback Processor')  # Optional
+OPENROUTER_MODEL = os.environ.get('OPENROUTER_MODEL', 'openai/gpt-4o')
+YOUR_SITE_URL = os.environ.get('SITE_URL', 'https://yourapp.com')
+YOUR_SITE_NAME = os.environ.get('SITE_NAME', 'Jira Feedback Processor')
+
+logger.info("=" * 80)
+logger.info("LLM FEEDBACK EVALUATION SERVICE STARTED")
+logger.info("=" * 80)
+logger.info(f"Configuration:")
+logger.info(f"  - Google Sheet: {GOOGLE_SHEET}")
+logger.info(f"  - OpenRouter Model: {OPENROUTER_MODEL}")
+logger.info(f"  - OpenRouter API Key: {'✓ Configured' if OPENROUTER_API_KEY else '✗ Missing'}")
+logger.info(f"  - Google Credentials: {'✓ Configured' if CREDENTIALS_JSON else '✗ Missing'}")
+logger.info("=" * 80)
+
 
 def get_google_sheets_client():
     """Authorize and return Google Sheets client"""
+    logger.info("Attempting to authorize Google Sheets client...")
+    
     if not CREDENTIALS_JSON:
-        print("Error: GOOGLE_CREDENTIALS_JSON not configured")
+        logger.error("GOOGLE_CREDENTIALS_JSON not configured")
         return None
     
     try:
+        logger.debug("Parsing Google credentials JSON...")
         creds_dict = json.loads(CREDENTIALS_JSON)
+        logger.debug(f"Service account email: {creds_dict.get('client_email', 'N/A')}")
+        
         creds = Credentials.from_service_account_info(
             creds_dict,
             scopes=['https://www.googleapis.com/auth/spreadsheets']
         )
-        return gspread.authorize(creds)
+        
+        client = gspread.authorize(creds)
+        logger.info("✓ Successfully authorized Google Sheets client")
+        return client
+        
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse GOOGLE_CREDENTIALS_JSON: {e}")
+        return None
     except Exception as e:
-        print(f"Error authorizing Google Sheets: {e}")
+        logger.error(f"Error authorizing Google Sheets: {e}")
+        logger.debug(f"Traceback: {traceback.format_exc()}")
         return None
 
+
 def read_feedback_rows():
-    """Read all rows from Google Sheet that need evaluation"""
+    """Read ALL rows from Google Sheet that have feedback"""
+    logger.info("=" * 80)
+    logger.info("READING ALL FEEDBACK ROWS FROM GOOGLE SHEETS")
+    logger.info("=" * 80)
+    
     client = get_google_sheets_client()
     if not client:
+        logger.error("Cannot proceed without Google Sheets client")
         return []
     
     try:
+        logger.info(f"Opening Google Sheet: '{GOOGLE_SHEET}'...")
         sh = client.open(GOOGLE_SHEET)
-        worksheet = sh.get_worksheet(0)  # First worksheet
+        logger.info(f"✓ Successfully opened sheet: '{sh.title}'")
         
-        # Get all rows
+        worksheet = sh.get_worksheet(0)
+        logger.info(f"✓ Accessing worksheet: '{worksheet.title}'")
+        logger.info(f"  - Total rows: {worksheet.row_count}")
+        logger.info(f"  - Total columns: {worksheet.col_count}")
+        
         all_rows = worksheet.get_all_values()
+        logger.info(f"✓ Retrieved {len(all_rows)} total rows")
         
         if len(all_rows) < 2:
-            print("No data rows found in sheet")
+            logger.warning("No data rows found in sheet")
             return []
         
-        # Headers: jira_id, summary, priority, justification, feature_impact, releasedate, feedback, llm_evaluation, evaluation_status, timestamp
         headers = all_rows[0]
         data_rows = all_rows[1:]
+        logger.info(f"Sheet structure: {len(data_rows)} data rows")
+        logger.info(f"Headers: {headers}")
         
-        # Filter rows that need evaluation (have feedback but no evaluation)
         rows_to_process = []
-        for idx, row in enumerate(data_rows, start=2):  # Start from row 2 (after header)
-            # Ensure row has enough columns
+        rows_with_feedback = 0
+        rows_without_feedback = 0
+        
+        logger.info("\nScanning ALL rows with feedback...")
+        
+        for idx, row in enumerate(data_rows, start=2):
             while len(row) < 10:
                 row.append('')
             
@@ -67,11 +127,10 @@ def read_feedback_rows():
             feature_impact = row[4] if len(row) > 4 else ''
             releasedate = row[5] if len(row) > 5 else ''
             feedback = row[6] if len(row) > 6 else ''
-            llm_evaluation = row[7] if len(row) > 7 else ''
-            evaluation_status = row[8] if len(row) > 8 else ''
             
-            # Process if feedback exists but no evaluation yet
-            if feedback and feedback.strip() and not llm_evaluation:
+            if feedback and feedback.strip():
+                rows_with_feedback += 1
+                logger.info(f"  Row {idx} ({jira_id}): ✓ Has feedback")
                 rows_to_process.append({
                     'row_index': idx,
                     'jira_id': jira_id,
@@ -82,39 +141,58 @@ def read_feedback_rows():
                     'releasedate': releasedate,
                     'feedback': feedback
                 })
+            else:
+                rows_without_feedback += 1
+                logger.debug(f"  Row {idx}: No feedback - skipping")
         
-        print(f"Found {len(rows_to_process)} rows to process")
+        logger.info("\n" + "=" * 80)
+        logger.info("SCAN SUMMARY")
+        logger.info("=" * 80)
+        logger.info(f"Total data rows: {len(data_rows)}")
+        logger.info(f"Rows with feedback: {rows_with_feedback}")
+        logger.info(f"Rows to process: {len(rows_to_process)}")
+        logger.info("=" * 80)
+        
         return rows_to_process
     
+    except gspread.exceptions.SpreadsheetNotFound:
+        logger.error(f"Spreadsheet '{GOOGLE_SHEET}' not found")
+        return []
     except Exception as e:
-        print(f"Error reading feedback rows: {e}")
+        logger.error(f"Error reading feedback rows: {e}")
+        logger.debug(f"Traceback: {traceback.format_exc()}")
         return []
 
-def evaluate_with_llm(row_data):
-    """Send data to LLM for evaluation using OpenRouter"""
+
+def evaluate_individual_feedback(row_data):
+    """Evaluate a single row's feedback against its priority assignment"""
+    jira_id = row_data['jira_id']
+    logger.info(f"\n{'─' * 80}")
+    logger.info(f"EVALUATING: {jira_id}")
+    logger.info(f"{'─' * 80}")
+    
     if not OPENROUTER_API_KEY:
+        logger.error("OPENROUTER_API_KEY not configured")
         return "Error: OPENROUTER_API_KEY not configured"
     
     try:
-        # Construct the prompt
-        prompt = f"""These are the features that were released in the last eligible cycle, along with the AI predicted feature priority, justification for that priority, and post-release feedback received for the feature.
+        prompt = f"""Analyze this feature's priority assignment against actual post-release feedback:
 
-Feature Details:
-- Jira ID: {row_data['jira_id']}
-- Summary: {row_data['summary']}
-- AI Predicted Priority: {row_data['priority']}
-- Justification for Priority: {row_data['justification']}
-- Feature Impact: {row_data['feature_impact']}
-- Release Date: {row_data['releasedate']}
+Feature: {row_data['jira_id']} - {row_data['summary']}
+AI Assigned Priority: {row_data['priority']}
+Justification: {row_data['justification']}
+Expected Impact: {row_data['feature_impact']}
+Release Date: {row_data['releasedate']}
 
-Post-Release Feedback:
+Actual Feedback Received:
 {row_data['feedback']}
 
-Task: Go through these fields and summarize any deviations in the feedback compared to the justification used for prioritizing it - which can be used as a qualitative input for the next prioritization cycle.
-
-Provide a concise summary (2-3 sentences) of key deviations or insights."""
+Task: Compare the priority/justification with actual feedback. Was the priority appropriate? Identify key deviations and learnings for future prioritization. (2-3 sentences)"""
         
-        # Call OpenRouter API
+        logger.info(f"Calling OpenRouter API...")
+        logger.debug(f"  Model: {OPENROUTER_MODEL}")
+        
+        start_time = datetime.now()
         response = requests.post(
             url="https://openrouter.ai/api/v1/chat/completions",
             headers={
@@ -125,29 +203,103 @@ Provide a concise summary (2-3 sentences) of key deviations or insights."""
             },
             data=json.dumps({
                 "model": OPENROUTER_MODEL,
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ]
-            })
+                "messages": [{"role": "user", "content": prompt}]
+            }),
+            timeout=60
         )
+        
+        elapsed = (datetime.now() - start_time).total_seconds()
+        logger.info(f"Response received in {elapsed:.2f}s")
         
         if response.status_code == 200:
             result = response.json()
-            return result['choices'][0]['message']['content']
+            evaluation = result['choices'][0]['message']['content']
+            
+            if 'usage' in result:
+                logger.info(f"Tokens used: {result['usage'].get('total_tokens', 'N/A')}")
+            
+            logger.info(f"✓ Evaluation: {evaluation[:150]}...")
+            return evaluation
         else:
-            error_msg = f"OpenRouter API Error: {response.status_code} - {response.text}"
-            print(error_msg)
-            return error_msg
+            error = f"API Error: {response.status_code}"
+            logger.error(error)
+            return error
     
     except Exception as e:
-        print(f"Error calling LLM API: {e}")
+        error = f"Error: {str(e)}"
+        logger.error(error)
+        return error
+
+
+def generate_summary_for_next_cycle(all_evaluations):
+    """Generate comprehensive summary for next prioritization cycle"""
+    logger.info("\n" + "=" * 80)
+    logger.info("GENERATING SUMMARY FOR NEXT CYCLE")
+    logger.info("=" * 80)
+    
+    if not OPENROUTER_API_KEY:
+        return "Error: API key not configured"
+    
+    try:
+        eval_texts = [
+            f"Feature: {e['jira_id']} - {e['summary']}\nPriority: {e['priority']}\nAnalysis: {e['evaluation']}\n"
+            for e in all_evaluations
+        ]
+        
+        combined = "\n".join(eval_texts)
+        
+        prompt = f"""Analyze these {len(all_evaluations)} feature evaluations from the last prioritization cycle:
+
+{combined}
+
+Synthesize insights for the NEXT prioritization cycle:
+
+1. **Patterns**: What patterns emerge in priority misalignments? Which feature types were over/under-prioritized?
+2. **Critical Learnings**: Key insights that should influence future priorities
+3. **Adjustments**: Specific factors to weight differently next time
+4. **Successes**: What worked well in priority predictions?
+
+Provide a structured summary (300-400 words) to improve next round of LLM priority assignments."""
+        
+        logger.info(f"Generating summary for {len(all_evaluations)} features...")
+        
+        start_time = datetime.now()
+        response = requests.post(
+            url="https://openrouter.ai/api/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                "HTTP-Referer": YOUR_SITE_URL,
+                "X-Title": YOUR_SITE_NAME,
+                "Content-Type": "application/json"
+            },
+            data=json.dumps({
+                "model": OPENROUTER_MODEL,
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.7
+            }),
+            timeout=120
+        )
+        
+        elapsed = (datetime.now() - start_time).total_seconds()
+        logger.info(f"Summary generated in {elapsed:.2f}s")
+        
+        if response.status_code == 200:
+            result = response.json()
+            summary = result['choices'][0]['message']['content']
+            logger.info(f"✓ Summary generated ({len(summary)} chars)")
+            return summary
+        else:
+            return f"API Error: {response.status_code}"
+    
+    except Exception as e:
+        logger.error(f"Error generating summary: {e}")
         return f"Error: {str(e)}"
 
+
 def write_evaluation_to_sheet(row_index, evaluation_text):
-    """Write LLM evaluation back to Google Sheet"""
+    """Write individual evaluation back to the sheet"""
+    logger.info(f"Writing evaluation to row {row_index}...")
+    
     client = get_google_sheets_client()
     if not client:
         return False
@@ -156,45 +308,61 @@ def write_evaluation_to_sheet(row_index, evaluation_text):
         sh = client.open(GOOGLE_SHEET)
         worksheet = sh.get_worksheet(0)
         
-        # Column H (8) = LLM Evaluation, Column I (9) = Status, Column J (10) = Timestamp
         timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         
-        worksheet.update_cell(row_index, 8, evaluation_text)  # LLM Evaluation
-        worksheet.update_cell(row_index, 9, 'Processed')  # Status
-        worksheet.update_cell(row_index, 10, timestamp)  # Timestamp
+        # Column H (8) = LLM Evaluation
+        # Column I (9) = Status
+        # Column J (10) = Timestamp
+        worksheet.update_cell(row_index, 8, evaluation_text)
+        worksheet.update_cell(row_index, 9, 'Processed')
+        worksheet.update_cell(row_index, 10, timestamp)
         
-        print(f"  Written evaluation to row {row_index}")
+        logger.info(f"✓ Written to row {row_index} at {timestamp}")
         return True
     
     except Exception as e:
-        print(f"Error writing evaluation: {e}")
+        logger.error(f"Error writing to sheet: {e}")
         return False
 
-def process_all_feedback():
-    """Main function to process all feedback rows"""
-    print("Starting feedback processing...")
-    print(f"Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    
-    # Read rows that need processing
-    rows_to_process = read_feedback_rows()
-    
-    if not rows_to_process:
-        print("No rows to process")
-        return
-    
-    # Process each row
-    processed_count = 0
-    for row_data in rows_to_process:
-        print(f"\nProcessing {row_data['jira_id']}: {row_data['summary']}")
-        
-        # Get LLM evaluation
-        evaluation = evaluate_with_llm(row_data)
-        
-        # Write back to sheet
-        if write_evaluation_to_sheet(row_data['row_index'], evaluation):
-            processed_count += 1
-    
-    print(f"\nProcessing complete. Processed {processed_count}/{len(rows_to_process)} rows")
 
-if __name__ == "__main__":
-    process_all_feedback()
+def write_summary_to_sheet(summary_text):
+    """Write the overall summary to the sheet (new row or separate section)"""
+    logger.info("Writing overall summary to sheet...")
+    
+    client = get_google_sheets_client()
+    if not client:
+        return False
+    
+    try:
+        sh = client.open(GOOGLE_SHEET)
+        worksheet = sh.get_worksheet(0)
+        
+        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        
+        # Find the first empty row
+        all_values = worksheet.get_all_values()
+        next_row = len(all_values) + 2  # Add buffer row
+        
+        # Write summary in a clear format
+        logger.info(f"Writing summary to row {next_row}...")
+        
+        worksheet.update_cell(next_row, 1, "=== CYCLE SUMMARY ===")
+        worksheet.update_cell(next_row + 1, 1, f"Generated: {timestamp}")
+        worksheet.update_cell(next_row + 2, 1, "Summary for Next Prioritization Cycle:")
+        worksheet.update_cell(next_row + 3, 1, summary_text)
+        
+        logger.info(f"✓ Summary written starting at row {next_row}")
+        logger.info(f"Summary preview: {summary_text[:200]}...")
+        
+        return True
+    
+    except Exception as e:
+        logger.error(f"Error writing summary: {e}")
+        return False
+
+
+def process_all_feedback():
+    """Main function - processes all feedback and generates summary"""
+    execution_start = datetime.now()
+    
+    logger.info("\n" + "=" *
