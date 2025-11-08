@@ -128,8 +128,7 @@ Priority Rationale: {row_data['justification']}
 Feature Impact: {row_data['feature_impact']}
 Task: 
 - Write a single reflexive summary sentence (max 40 words) describing any significant deviation between STAR Priority/Rationale and actual Feature Impact.
-- Then, give up to 2 key learnings (each <20 words), useful for improving future prioritization.
-- Do not elaborate further. Do not repeat inputs."""
+- Do not add any headings. Do not elaborate further. Do not repeat inputs."""
         logger.info(f"Calling OpenRouter API...")
         start_time = datetime.now()
         response = requests.post(
