@@ -8,7 +8,6 @@ import logging
 import sys
 import traceback
 
-
 # Logging configuration: logs to both console and a timestamped file
 logging.basicConfig(
     level=logging.INFO,
@@ -85,7 +84,8 @@ def read_feedback_rows():
         data_rows = all_rows[1:]
         rows_to_process = []
         for idx, row in enumerate(data_rows, start=2):
-            while len(row) < 9:  # Ensure all columns present
+            # Ensure all columns present (make sure at least 6 cols, index 0-5)
+            while len(row) < 9:
                 row.append('')
             jira_id = row[0].strip() if row[0] else ''
             summary = row[1].strip() if row[1] else ''
@@ -101,7 +101,8 @@ def read_feedback_rows():
                     'summary': summary,
                     'priority': priority,
                     'justification': justification,
-                    'feature_impact': feature_impact
+                    'feature_impact': feature_impact,
+                    'feature_impact_link': feature_impact_link
                 })
         logger.info(f"\nFound {len(rows_to_process)} rows to process")
         logger.info("=" * 80)
@@ -112,9 +113,9 @@ def read_feedback_rows():
         return []
 
 def evaluate_individual_feedback(row_data):
-    logger.info(f"\n{'─' * 80}")
+    logger.info(f"\n{'-' * 80}")
     logger.info(f"EVALUATING: {row_data['jira_id']}")
-    logger.info(f"{'─' * 80}")
+    logger.info(f"{'-' * 80}")
     if not OPENROUTER_API_KEY:
         return "Error: OPENROUTER_API_KEY not configured"
     try:
@@ -220,7 +221,7 @@ def process_all_feedback():
     try:
         rows_to_process = read_feedback_rows()
         if not rows_to_process:
-            logger.warning("\n⚠ No rows to process. Exiting.")
+            logger.warning("\nNo rows to process. Exiting.")
             return
         logger.info("\n" + "=" * 80)
         logger.info("PROCESSING INDIVIDUAL FEEDBACK")
