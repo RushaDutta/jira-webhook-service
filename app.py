@@ -24,20 +24,20 @@ def jira_to_gsheet():
         priority = fields.get("priority", "")
         justification = fields.get("justification", "")
         feature_impact = fields.get("featureImpact", "")
-        releasedate = fields.get("releasedate", "")
+        feature_impact_link = fields.get("featureImpactLink", "")
 
-        print(f"\n📩 Received Jira webhook:")
+        print("Received Jira webhook:")
         print(json.dumps(data, indent=2))
-        print(f"➡️ Extracted: {jira_id} | {summary}")
+        print(f"Extracted: {jira_id} | {summary}")
 
         if not CREDENTIALS_JSON:
-            print("⚠️ GOOGLE_CREDENTIALS_JSON not found.")
+            print("GOOGLE_CREDENTIALS_JSON not found.")
             return jsonify({
                 "status": "warning",
                 "message": "Missing Google Sheets credentials"
             }), 200
 
-        # --- Google Sheets write sequence ---
+        # Google Sheets write sequence
         import gspread
         from oauth2client.service_account import ServiceAccountCredentials
 
@@ -48,7 +48,7 @@ def jira_to_gsheet():
         creds_dict = json.loads(CREDENTIALS_JSON)
         creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
 
-        print("🔐 Authenticating with Google Sheets...")
+        print("Authenticating with Google Sheets...")
         gc = gspread.authorize(creds)
 
         if not GOOGLE_SHEET_ID:
@@ -56,26 +56,26 @@ def jira_to_gsheet():
 
         try:
             sh = gc.open_by_key(GOOGLE_SHEET_ID)
-            print(f"📗 Opened spreadsheet: {sh.title} ({GOOGLE_SHEET_ID})")
+            print(f"Opened spreadsheet: {sh.title} ({GOOGLE_SHEET_ID})")
         except Exception as e:
-            print("❌ Failed to open spreadsheet by ID")
+            print("Failed to open spreadsheet by ID")
             raise
 
         try:
             worksheet = sh.sheet1
-            print(f"📝 Using worksheet: {worksheet.title}")
+            print(f"Using worksheet: {worksheet.title}")
         except Exception:
-            print("❌ Could not access sheet1, attempting first worksheet fallback...")
+            print("Could not access sheet1, attempting first worksheet fallback...")
             worksheet = sh.get_worksheet(0)
 
         try:
-            new_row = [jira_id, summary, priority, justification, feature_impact, releasedate]
+            new_row = [jira_id, summary, priority, justification, feature_impact, feature_impact_link]
             response = worksheet.append_row(new_row, value_input_option="USER_ENTERED")
-            print(f"✅ append_row() response: {response}")
-            print(f"✅ Successfully wrote row: {new_row}")
+            print(f"append_row() response: {response}")
+            print(f"Successfully wrote row: {new_row}")
             return jsonify({"status": "success", "message": "Row written", "row": new_row}), 200
         except Exception as e:
-            print("❌ Error appending row:")
+            print("Error appending row:")
             traceback.print_exc()
             return jsonify({
                 "status": "error",
@@ -83,15 +83,13 @@ def jira_to_gsheet():
             }), 500
 
     except Exception as e:
-        print("🚨 Uncaught error in jira_to_gsheet:")
+        print("Uncaught error in jira_to_gsheet:")
         traceback.print_exc()
         return jsonify({"status": "error", "message": str(e)}), 500
-
 
 @app.route("/", methods=["GET"])
 def health():
     return jsonify({"status": "running", "message": "Jira webhook service active"}), 200
-
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
