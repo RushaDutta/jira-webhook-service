@@ -8,7 +8,6 @@ import logging
 import sys
 import traceback
 
-# Logging configuration: logs to both console and a timestamped file
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
@@ -19,7 +18,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Config loaded from environment
 GOOGLE_SHEET = os.environ.get('GOOGLE_SHEET_NAME', 'YOUR_SHEET_NAME')
 CREDENTIALS_JSON = os.environ.get('GOOGLE_CREDENTIALS_JSON') or os.environ.get('GOOGLE_CREDS_JSON')
 OPENROUTER_API_KEY = os.environ.get('OPENROUTER_API_KEY')
@@ -84,7 +82,6 @@ def read_feedback_rows():
         data_rows = all_rows[1:]
         rows_to_process = []
         for idx, row in enumerate(data_rows, start=2):
-            # Ensure all columns present (make sure at least 6 cols, index 0-5)
             while len(row) < 9:
                 row.append('')
             jira_id = row[0].strip() if row[0] else ''
@@ -93,7 +90,6 @@ def read_feedback_rows():
             justification = row[3].strip() if row[3] else ''
             feature_impact = row[4].strip() if row[4] else ''
             feature_impact_link = row[5].strip() if row[5] else ''
-            # OUTPUT columns: row[6] = Reflexive Summary, row[7] = wasProcessed, row[8] = Timestamp
             if jira_id and feature_impact:
                 rows_to_process.append({
                     'row_index': idx,
@@ -117,6 +113,7 @@ def evaluate_individual_feedback(row_data):
     logger.info(f"EVALUATING: {row_data['jira_id']}")
     logger.info(f"{'-' * 80}")
     if not OPENROUTER_API_KEY:
+        logger.error("OPENROUTER_API_KEY not configured!")
         return "Error: OPENROUTER_API_KEY not configured"
     try:
         prompt = f"""Reflexive evaluation of Jira feature prioritization.
@@ -129,33 +126,50 @@ Feature Impact: {row_data['feature_impact']}
 Task: 
 - Write a single reflexive summary sentence (max 40 words) describing any significant deviation between STAR Priority/Rationale and actual Feature Impact.
 - Do not add any headings. Do not elaborate further. Do not repeat inputs."""
+        logger.info(f"Prompt sent to LLM:\n{prompt}")
         logger.info(f"Calling OpenRouter API...")
         start_time = datetime.now()
-        response = requests.post(
-            url="https://openrouter.ai/api/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-                "HTTP-Referer": YOUR_SITE_URL,
-                "X-Title": YOUR_SITE_NAME,
-                "Content-Type": "application/json"
-            },
-            data=json.dumps({
-                "model": OPENROUTER_MODEL,
-                "messages": [{"role": "user", "content": prompt}]
-            }),
-            timeout=60
-        )
+        req_body = {
+            "model": OPENROUTER_MODEL,
+            "messages": [{"role": "user", "content": prompt}]
+        }
+        try:
+            response = requests.post(
+                url="https://openrouter.ai/api/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                    "HTTP-Referer": YOUR_SITE_URL,
+                    "X-Title": YOUR_SITE_NAME,
+                    "Content-Type": "application/json"
+                },
+                data=json.dumps(req_body),
+                timeout=60
+            )
+        except Exception as req_exc:
+            logger.error(f"Request to OpenRouter failed: {req_exc}")
+            logger.error(traceback.format_exc())
+            return "Error: Failed to call OpenRouter API"
         elapsed = (datetime.now() - start_time).total_seconds()
         logger.info(f"Response received in {elapsed:.2f}s")
+        logger.info(f"OpenRouter raw response status: {response.status_code}")
+        logger.info(f"OpenRouter raw response text: {response.text}")
         if response.status_code == 200:
-            result = response.json()
-            evaluation = result['choices'][0]['message']['content']
+            try:
+                result = response.json()
+                logger.info(f"Parsed OpenRouter response JSON: {json.dumps(result, indent=2)}")
+                evaluation = result['choices'][0]['message'].get('content', '').strip()
+            except Exception as parse_exc:
+                logger.error(f"Failed to parse OpenRouter response: {parse_exc}")
+                logger.error(traceback.format_exc())
+                return "Error: Failed to parse OpenRouter API response"
             if 'usage' in result:
                 logger.info(f"Tokens used: {result['usage'].get('total_tokens', 'N/A')}")
-            logger.info(f"✓ Evaluation: {evaluation[:150]}...")
+            logger.info(f"LLM Evaluation (pre-trunc): {evaluation[:150]}")
+            if not evaluation:
+                logger.warning(f"LLM returned blank evaluation for {row_data['jira_id']}")
             return evaluation
         else:
-            error = f"API Error: {response.status_code}"
+            error = f"API Error: {response.status_code} | Text: {response.text}"
             logger.error(error)
             return error
     except Exception as e:
@@ -165,9 +179,10 @@ Task:
         return error
 
 def write_evaluation_to_sheet(row_index, evaluation_text):
-    logger.info(f"Writing evaluation to row {row_index}...")
+    logger.info(f"Writing evaluation to row {row_index}. Eval: {evaluation_text[:120]}")
     client = get_google_sheets_client()
     if not client:
+        logger.error("No Sheets client.")
         return False
     try:
         sh = client.open(GOOGLE_SHEET)
@@ -230,8 +245,9 @@ def process_all_feedback():
         failed_count = 0
         all_evaluations = []
         for idx, row_data in enumerate(rows_to_process, start=1):
-            logger.info(f"\n[{idx}/{len(rows_to_process)}] Processing {row_data['jira_id']}...")
+            logger.info(f"\n[{idx}/{len(rows_to_process)}] Processing {row_data['jira_id']}: {row_data}")
             evaluation = evaluate_individual_feedback(row_data)
+            logger.info(f"Reflexive summary produced for {row_data['jira_id']}: {evaluation!r}")
             if write_evaluation_to_sheet(row_data['row_index'], evaluation):
                 processed_count += 1
                 all_evaluations.append({
@@ -261,7 +277,6 @@ def process_all_feedback():
         logger.info(f"Duration: {duration:.2f} seconds")
         logger.info(f"Total rows processed: {processed_count}")
         logger.info("=" * 80)
-        # HTML report generation
         docs_dir = "docs"
         os.makedirs(docs_dir, exist_ok=True)
         html_report_path = os.path.join(
