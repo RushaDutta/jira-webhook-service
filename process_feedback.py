@@ -124,7 +124,7 @@ STAR Priority: {row_data['priority']}
 Priority Rationale: {row_data['justification']}
 Feature Impact: {row_data['feature_impact']}
 Task: 
-- Write a single reflexive summary sentence (max 40 words) describing any significant deviation between STAR Priority/Rationale and actual Feature Impact.
+- Write a reflexive summary of 2 sentences (max 100 words) describing any significant deviation between STAR Priority/Rationale and actual Feature Impact, and any learnings from this.
 - Do not add any headings. Do not elaborate further. Do not repeat inputs."""
         logger.info(f"Prompt sent to LLM:\n{prompt}")
         logger.info(f"Calling OpenRouter API...")
