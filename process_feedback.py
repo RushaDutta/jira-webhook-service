@@ -92,7 +92,7 @@ def read_feedback_rows():
             priority = row[2].strip() if row[2] else ''
             justification = row[3].strip() if row[3] else ''
             feature_impact = row[4].strip() if row[4] else ''
-            releasedate = row[5].strip() if row[5] else ''
+            feature_impact_link = row[5].strip() if row[5] else ''
             # OUTPUT columns: row[6] = Reflexive Summary, row[7] = wasProcessed, row[8] = Timestamp
             if jira_id and feature_impact:
                 rows_to_process.append({
@@ -101,8 +101,7 @@ def read_feedback_rows():
                     'summary': summary,
                     'priority': priority,
                     'justification': justification,
-                    'feature_impact': feature_impact,
-                    'releasedate': releasedate
+                    'feature_impact': feature_impact
                 })
         logger.info(f"\nFound {len(rows_to_process)} rows to process")
         logger.info("=" * 80)
@@ -187,10 +186,10 @@ def generate_html_report(evaluations, output_path):
     logger.info(f"Generating HTML report at {output_path}...")
     try:
         html = []
-        html.append("<html><head><meta charset='UTF-8'><title>LLM Reflexive Evaluation Report</title></head><body>")
+        html.append("<html><head><meta charset='UTF-8'><title>Reflexive Summary</title></head><body>")
         html.append("<h1>LLM Reflexive Prioritization Evaluation Report</h1><table border='1' cellpadding='6' cellspacing='0'>")
         html.append(
-            "<tr style='background:#cacaca'><th>Jira ID</th><th>Jira Summary</th><th>STAR Priority</th><th>Priority Rationale</th><th>Feature Impact</th><th>Release Date</th><th>Reflexive Summary</th></tr>"
+            "<tr style='background:#cacaca'><th>Jira ID</th><th>Jira Summary</th><th>STAR Priority</th><th>Priority Rationale</th><th>Feature Impact</th><th>Feature Impact Link</th><th>Reflexive Summary</th></tr>"
         )
         for entry in evaluations:
             eval_html = entry.get('reflexive_summary', '').replace('\n', '<br>')
@@ -200,7 +199,7 @@ def generate_html_report(evaluations, output_path):
                 f"<td>{entry.get('priority','')}</td>"
                 f"<td>{entry.get('justification','')}</td>"
                 f"<td>{entry.get('feature_impact','')}</td>"
-                f"<td>{entry.get('releasedate','')}</td>"
+                f"<td>{entry.get('feature_impact_link','')}</td>"
                 f"<td>{eval_html}</td></tr>"
             )
         html.append("</table></body></html>")
@@ -240,7 +239,7 @@ def process_all_feedback():
                     'priority': row_data['priority'],
                     'justification': row_data['justification'],
                     'feature_impact': row_data['feature_impact'],
-                    'releasedate': row_data['releasedate'],
+                    'feature_impact_link': row_data['feature_impact_link'],
                     'reflexive_summary': evaluation
                 })
             else:
