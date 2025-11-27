@@ -2,7 +2,7 @@ name: LLM Feedback Evaluation
 
 on:
   schedule:
-    - cron: '0 0 28 3,6,9,12 *'
+    - cron: '0 15 28 3,6,9,12 *'
   workflow_dispatch:
   # Optionally enable on push
 
